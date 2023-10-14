@@ -1,0 +1,97 @@
+---
+title: "Mass Spec Aging Data Analysis"
+author: "Samuel Leung"
+output: pdf_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Load and Preprocess data}
+data <- read.csv("data/cardio_data_processed.csv")
+head(data)
+```
+
+```{r Finding size of dataset}
+nrow(data)
+```
+
+## Goal
+
+-   To estimate the total number of people with cardiovascular disease: $\hat{t}_{\text{cardio}}$
+-   To estimate the average blood pressure of the population: $\bar{u}_{\text{ap_hi}}, \hspace{1mm}\bar{u}_{\text{ap_lo}}$
+
+## Sample Size Calculations:
+
+We can't find the maximum variance from a continuous variable, we go through sample size calculations with the maximum variance possible from a binary variable: the total number of people with cardiovascular disease. We want the margin of error $\delta$ of our estimate to be within $\pm$ 1000 people, 19 times out of 20.
+
+### Mathematical steps
+
+Let $X$ be the binary random variable that models the number of people with cardiovascular disease, with mean $p$ and variance $p(1-p)$. Let $\bar y_S = \hat p$ be the estimate of the average number people with cardiovascular disease. of We want to estimate the total number of people with cardiovascular disease, $\hat t_{p,\text{cardio}} = N \bar y_s$. The variance of this estimator will be $var(\hat t_{p, \text{cardio}}) = N^2\hat p(1-\hat p)$. Going through our sample size calculations, we want to maximize variance, so we take $\hat p = 0.5$. Therefore, ignoring the finite population correction factor for now, we want to solve the following:
+
+$$
+\begin{align*}
+1000 &\geq 1.96\sqrt{0.25 N^2 / n_0}\\
+\implies \Big(\frac{1000}{1.96}\Big)^2 &\geq \frac{N^2}{4n_0}\\
+\implies n_0 &\geq \Big(\frac{N}{2} \cdot \frac{1.96}{1000}\Big)^2\\
+\end{align*}
+$$ Converting this to code:
+
+```{r Sample Size Calc}
+N <- nrow(data)
+target <- 1000
+n_0 <- (1.96 * N / (2*target))^2
+print(paste0("sample size ignoring FPC: ", n_0))
+print(paste0("n_0 / N: ", n_0 / N))
+```
+
+Comparing the sample size calculated above with the total population size, we see that $\frac{n_0}{N} = 0.066 \geq 0.05$. So we cannot ignore the finite population correction factor in our sample size calculations. Factoring in the FPC, we would want to solve the following: $$n = \frac{n_0}{1+n_0/N}$$ Doing the calculations again with the FPC in mind with code:
+
+```{r Sample Size with FPC}
+n <- ceiling(n_0 / (1 + n_0 / N))
+print(paste0("Sample Size with FPC: ", n))
+```
+
+So we use a sample size of 4194.
+
+```{r Generate random sample}
+# set seed for reproducable results
+set.seed(124)
+
+# generate random sample
+srs <- data[sample(1:nrow(data), n), ]
+
+head(srs)
+
+# sanity check
+print(nrow(srs))
+```
+
+```{r Calculate estimates}
+N <- nrow(data)
+fpc <- 1 - n / N
+
+ap_hi.est <- round(mean(srs$ap_hi), 3)
+ap_hi.var <- fpc*var(srs$ap_hi) / n
+ap_hi.moe <- round(1.96*sqrt(ap_hi.var), 3)
+
+ap_lo.est <- round(mean(srs$ap_lo), 3)
+ap_lo.var <- fpc*var(srs$ap_lo) / n
+ap_lo.moe <- round(1.96*sqrt(ap_lo.var), 3)
+
+cardio.p <- mean(srs$cardio)
+cardio.est <- round(N*cardio.p, 3)
+cardio.var <- fpc*(cardio.p)*(1-cardio.p) * N
+cardio.moe <- round(1.96*sqrt(cardio.var), 3)
+
+print(paste0("Average ap_hi estimate: ", ap_hi.est, " +/- ", ap_hi.moe))
+print(paste0("Average ap_lo estimate: ", ap_lo.est, " +/- ", ap_lo.moe))
+print(paste0("Total cardio estimate: ", cardio.est, " +/- ", cardio.moe))
+```
+
+```{r TODO}
+# sample size calcs
+# from SRS: make estimates and calculate CI
+```
