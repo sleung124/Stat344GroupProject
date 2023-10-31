@@ -40,6 +40,8 @@ $$
 $$ Converting this to code:
 
 ```{r Sample Size Calc}
+# add reasoning for why we chose MOE to be 1000
+
 N <- nrow(data)
 target <- 1000
 n_0 <- (1.96 * N / (2*target))^2
@@ -56,7 +58,7 @@ print(paste0("Sample Size with FPC: ", n))
 
 So we use a sample size of 4194.
 
-```{r Generate random sample}
+```{r Generate SRS}
 # set seed for reproducable results
 set.seed(124)
 
@@ -69,8 +71,7 @@ head(srs)
 print(nrow(srs))
 ```
 
-```{r Calculate estimates}
-N <- nrow(data)
+```{r Calculate vanilla estimates with SRS}
 fpc <- 1 - n / N
 
 ap_hi.est <- round(mean(srs$ap_hi), 3)
@@ -91,7 +92,52 @@ print(paste0("Average ap_lo estimate: ", ap_lo.est, " +/- ", ap_lo.moe))
 print(paste0("Total cardio estimate: ", cardio.est, " +/- ", cardio.moe))
 ```
 
+## Stratification
+
+To determine which variable to stratify by, we base our decision on the variable that would produce the lowest within-strata variance. Equivalently, from a chosen subset of potential stratifying candidates $s_i \in \{s_1 \cdots s_n\}$, we want to choose to stratify on $s_i$ if: $$ \text{argmax}\big(s^2_{\text{between strata}} / s^2_{\text{total}}\big) = s_i$$ $s^2_{\text{between strata}}$ and $s^2_{\text{total}}$ are between-strata and total variances respectively. Calculating this ratio for the potential stratifying variables `gender`, `cholesterol`, `gluc`, `smoke`, `alco`, and `active`:
+
+```{r Stratified sampling EDA}
+# should stratify based on variable that produces smallest within-strata variance
+
+# candidate stratifiying variables: 
+# gender
+# cholesterol
+# gluc
+# smoke
+# alco
+# active
+
+# Calculate within-strata variance of target based off of levels of variables in var_lst
+strata_var <- function(df, target_df) {
+  var_lst <- colnames(df)
+  target_lst <- colnames(target_df)
+  ret <- NULL
+  
+  for (t in 1:length(target_df)) {
+    target <- target_df[,t]
+    ratios <- rep(NA, length(var_lst))
+    for (i in 1:length(var_lst)) {
+      v <- df[,i]
+      var.ws <- sum(prop.table(table(v)) * tapply(target, v, var))
+      var.bs <- sum(prop.table(table(v)) * (tapply(target, v, mean) - mean(target))^2)
+      var.tot <- var.ws + var.bs
+      ratios[i] <-  var.ws / var.tot
+    }
+    ret <- rbind(ret, ratios)
+  }
+  rownames(ret) <- target_lst
+  colnames(ret) <- var_lst
+  return(ret)
+}
+
+pred <- data[,c("gender", "cholesterol", "gluc", 
+                "smoke", "alco", "active")]
+target <- data[,c("cardio", "ap_hi", "ap_lo")]
+strata_var(pred, target)
+```
+From the table above, we see that variables `smoke`, `alco`, and `active` have the highest between-strata to overall variance ratios, indicating that these variables are the best to stratify on. These three variables all have similar performance, so we arbitrarily choose one (go with `alco` for now).
+
 ```{r TODO}
-# sample size calcs
-# from SRS: make estimates and calculate CI
+# Add/ modify Ratio + Regression Estimates from Andrew
+# Finish up code for stratified estimator
 ```
