@@ -37,7 +37,9 @@ $$
 \implies \Big(\frac{1000}{1.96}\Big)^2 &\geq \frac{N^2}{4n_0}\\
 \implies n_0 &\geq \Big(\frac{N}{2} \cdot \frac{1.96}{1000}\Big)^2\\
 \end{align*}
-$$ Converting this to code:
+$$
+
+Converting this to code:
 
 ```{r Sample Size Calc}
 # add reasoning for why we chose MOE to be 1000
@@ -65,10 +67,8 @@ set.seed(124)
 # generate random sample
 srs <- data[sample(1:nrow(data), n), ]
 
-head(srs)
-
-# sanity check
-print(nrow(srs))
+# double check size of sample
+dim(srs)
 ```
 
 ```{r Calculate vanilla estimates with SRS}
@@ -91,6 +91,66 @@ print(paste0("Average ap_hi estimate: ", ap_hi.est, " +/- ", ap_hi.moe))
 print(paste0("Average ap_lo estimate: ", ap_lo.est, " +/- ", ap_lo.moe))
 print(paste0("Total cardio estimate: ", cardio.est, " +/- ", cardio.moe))
 ```
+## Regression and Ratio Estimates
+
+To calculate regression and ratio estimates, we want to use an auxiliary variable with strong correlation. We do so by first calculating the correlation values for each of our target variables against the other numeric columns in our dataset:
+
+```{r Regression + Ratio estimates from Andrew}
+# ngl looks incorrect so gonna recode the estimates + SE myself
+pop.cor <- cor(data[,2:15])
+target_lst <- c("ap_hi", "ap_lo", "cardio")
+pop.cor[target_lst, !(colnames(pop.cor)%in%target_lst)]
+```
+The highest positive-correlating variable for `ap_hi` and `ap_lo` are `weight`. The highest positively-correlating variable for `cardio` is `age`, however it is difficult to interpret the value in this column, as the age is not counted by year. So we opt to use the `age_years` column, which has similar correlation values to `age`. We note that for all these correlations, none of them seem particularly strong, which suggests that the ratio and regression estimates may not be that useful in prediction. 
+```{r}
+# ratio estimate:
+ratio.ap_hi.est <- mean(srs$ap_hi) / mean(srs$weight)
+ratio.ap_lo.est <- mean(srs$ap_lo) / mean(srs$weight)
+ratio.cardio.est <- mean(srs$cardio) / mean(srs$age_years)
+
+ratio.ap_hi.se <- sqrt(fpc*sum(var(srs$ap_hi-ratio.ap_hi.est*srs$weight))/n)
+ratio.ap_lo.se <- sqrt(fpc*sum(var(srs$ap_lo-ratio.ap_lo.est*srs$weight))/n)
+ratio.cardio.se <- sqrt(fpc*sum(var(srs$cardio-ratio.cardio.est*srs$age_years))/n)
+
+ratio.summary <- rbind(
+  c(ratio.ap_hi.est, ratio.ap_hi.se),
+  c(ratio.ap_lo.est, ratio.ap_lo.se),
+  c(ratio.cardio.est, ratio.cardio.se)
+)
+colnames(ratio.summary) <- c("est", "se")
+rownames(ratio.summary) <- paste("ratio.", target_lst, sep="")
+ratio.summary
+```
+
+
+```{r Regression Estimates}
+# regression estimate:
+
+# helper function for regression estimate. X, y should be matrices of proper size. Don't ask me why i'm not just using lm() for this; idk either
+regression.est_and_se <- function(X, y, x.pop) {
+  X <- as.matrix(X); y <- as.matrix(y)
+  X <- cbind(rep(1, dim(X)[1]), X)
+  w <- solve(t(X)%*%X)%*%t(X)%*%y
+  y.hat <- X%*%w
+  se <- sqrt(fpc*sum(var(y - y.hat))/nrow(X))
+  est <- cbind(1, x.pop) %*% w
+  
+  ret <- c()
+  ret$est <- est; ret$se <- se
+  return(ret)
+}
+
+reg.ap_hi <- regression.est_and_se(srs$weight, srs$ap_hi, mean(data$weight))
+reg.ap_lo <- regression.est_and_se(srs$weight, srs$ap_lo, mean(data$weight))
+reg.cardio <- regression.est_and_se(srs$age_years, srs$cardio, mean(data$age_years))
+
+reg.summary <- rbind(
+  reg.ap_hi, reg.ap_lo, reg.cardio
+)
+
+reg.summary
+```
+
 
 ## Stratification
 
@@ -108,7 +168,7 @@ To determine which variable to stratify by, we base our decision on the variable
 # active
 
 # Calculate within-strata variance of target based off of levels of variables in var_lst
-strata_var <- function(df, target_df) {
+strata.compare_var <- function(df, target_df) {
   var_lst <- colnames(df)
   target_lst <- colnames(target_df)
   ret <- NULL
@@ -133,9 +193,77 @@ strata_var <- function(df, target_df) {
 pred <- data[,c("gender", "cholesterol", "gluc", 
                 "smoke", "alco", "active")]
 target <- data[,c("cardio", "ap_hi", "ap_lo")]
-strata_var(pred, target)
+strata.compare_var(pred, target)
 ```
+
 From the table above, we see that variables `smoke`, `alco`, and `active` have the highest between-strata to overall variance ratios, indicating that these variables are the best to stratify on. These three variables all have similar performance, so we arbitrarily choose one (go with `alco` for now).
+
+We now want to see how we much from each strata we should sample. In our case, cost of sampling in our case is constant, as our sampling process is simulated. We want to see if we can use proportional allocation, so we check to see if we can assume the variances of each strata are equal:
+
+```{r Not sure how to verify this}
+
+```
+
+*REASONING TO ASSUME THAT VARIANCE IS NOT EQUAL*, so optimal allocation in our case can be calculated through the formula below:
+
+$$
+\begin{align*}
+ n_h &= n\Big(\frac{N_hs_{h, \text{guess}}}{\sum_{i=1}^hN_is_{i, \text{guess}}}\Big)
+\end{align*}
+$$
+
+According to the documentation from Kaggle, the `alco` predictor has 2 levels: $0$ for people that do not consume alcohol, and $1$ for people that do. We guess the standard deviation of each strata using stratum-specific population variance. Taking total sample size `n` to be the same as above, we find the proportional size for each strata:
+
+```{r Optimum Allocation Calculations}
+strata.ap_hi.weight <- table(data$alco)*tapply(data$ap_hi, data$alco, sd)
+strata.ap_lo.weight <- table(data$alco)*tapply(data$ap_lo, data$alco, sd)
+strata.cardio.weight <- table(data$alco)*tapply(data$cardio, data$alco, sd)
+
+rbind(
+  strata.ap_hi.weight / sum(strata.ap_hi.weight),
+  strata.ap_lo.weight / sum(strata.ap_lo.weight),
+  strata.cardio.weight / sum(strata.cardio.weight)
+)
+```
+
+\*\*DETERMINE PROPORTIONAL SAMPLE SIZE HERE\*\*
+
+```{r General code for finding stratified estimate}
+set.seed(124)
+
+# generate stratified sample
+prop <- 0.94
+n1 <- round(prop * n, 0); n2 <- round((1-prop) * n, 0)
+pop.alco_zero <- data[data$alco==0,]; pop.alco_one <- data[data$alco==1,]
+strata.sample <- rbind(pop.alco_zero[sample(1:nrow(pop.alco_zero), n1),],
+                       pop.alco_one[sample(1:nrow(pop.alco_one), n2), ])
+
+
+# given population data, sample and calculate the stratified estimate + SE
+stratify.est_and_se <- function(pop, sample, var_str, target_str) {
+  pop.var.count <- table(data[,var_str])
+  sample.var.count <- table(sample[,var_str])
+  # population proportion for each strata
+  pop.prop <- prop.table(pop.var.count)
+  
+  sample.means <- tapply(sample[,target_str], sample[,var_str], mean)
+  sample.vars <- tapply(sample[,target_str], sample[,var_str], var) / pop.var.count
+  fpc <- 1 - sample.var.count / pop.var.count
+  
+  est <- round(sum(pop.prop * sample.means), 3)
+  se <- round(sqrt(sum(pop.prop^2 * fpc * sample.vars)), 3)
+  print(paste0("Strata Estimate for ", target_str, ": ", est, " +/- ", 1.96*se))
+  
+  ret <- c()
+  ret$est <- est
+  ret$se <- se
+  return(ret)
+}
+
+stratify.est_and_se(data, strata.sample, var_str = "alco", target_str = "ap_hi")
+stratify.est_and_se(data, strata.sample, var_str = "alco", target_str = "ap_lo")
+stratify.est_and_se(data, strata.sample, var_str = "alco", target_str = "cardio")
+```
 
 ```{r TODO}
 # Add/ modify Ratio + Regression Estimates from Andrew
