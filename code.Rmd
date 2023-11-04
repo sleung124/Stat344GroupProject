@@ -23,8 +23,8 @@ nrow(data)
 ## Goal
 
 -   To estimate the total number of people with cardiovascular disease: $\hat{t}_{\text{cardio}}$
--   To estimate the average blood pressure of the population: 
-$\bar{u}_{\text{ap_hi}}$, $\bar{u}_{\text{ap_lo}}$
+-   To estimate the average blood pressure of the population: $\bar{u}_{\text{ap\_hi}}$, $\bar{u}_{\text{ap\_lo}}$
+<!-- $\bar{u}_{\text{ap_hi}}$, $\bar{u}_{\text{ap_lo}}$ -->
 
 ## Sample Size Calculations:
 
@@ -141,7 +141,8 @@ ratio.cardio.ratio <- mean(srs$cardio) / mean(srs$age_years)
 
 ratio.ap_hi.se <- sqrt(fpc*sum(var(srs$ap_hi-ratio.ap_hi.ratio*srs$weight))/n)
 ratio.ap_lo.se <- sqrt(fpc*sum(var(srs$ap_lo-ratio.ap_lo.ratio*srs$weight))/n)
-ratio.cardio.se <- N*sqrt(fpc*sum(var(srs$cardio-ratio.cardio.ratio*srs$age_years))/n)
+ratio.cardio.se <- N*sqrt(fpc*sum(var(
+  srs$cardio-ratio.cardio.ratio*srs$age_years))/n)
 
 ratio.ap_hi.est <- ratio.ap_hi.ratio * mean(data$weight)
 ratio.ap_lo.est <- ratio.ap_lo.ratio * mean(data$weight)
@@ -161,7 +162,8 @@ ratio.summary
 ```{r Regression Estimates}
 # regression estimate:
 
-# helper function for regression estimate. X, y should be matrices of proper size. Don't ask me why i'm not just using lm() for this; idk either
+# helper function for regression estimate. X, y should be matrices of proper size. 
+# Don't ask me why i'm not just using lm() for this; idk either
 regression.est_and_se <- function(X, y, x.pop) {
   X <- as.matrix(X); y <- as.matrix(y)
   X <- cbind(rep(1, dim(X)[1]), X)
