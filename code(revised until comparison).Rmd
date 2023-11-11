@@ -1,11 +1,6 @@
 ---
-title: "Stat 344 Group Project"
-author: 
-  - "Samuel Leung: 6559 2651"
-  - "Cuong Andrew Luu: 16723686" 
-  - "Xuan Chen: 15734643" 
-  - "Eleanor Yi: 91187922" 
-  - "Yi Chen Kevin Ding: 87327789"
+title: "Mass Spec Aging Data Analysis"
+author: "Samuel Leung"
 output: pdf_document
 date: "`r Sys.Date()`"
 ---
@@ -29,6 +24,7 @@ nrow(data)
 
 -   To estimate the total number of people with cardiovascular disease: $\hat{t}_{\text{cardio}}$
 -   To estimate the average blood pressure of the population: $\bar{u}_{\text{ap\_hi}}$, $\bar{u}_{\text{ap\_lo}}$
+<!-- $\bar{u}_{\text{ap_hi}}$, $\bar{u}_{\text{ap_lo}}$ -->
 
 ## Sample Size Calculations:
 
@@ -36,15 +32,16 @@ We can't find the maximum variance from a continuous variable, we go through sam
 
 ### Mathematical steps
 
-Let $X$ be the binary random variable that models the number of people with cardiovascular disease, with mean $p$ and variance $p(1-p)$. Let $\bar y_S = \hat p$ be the estimate of the average number people with cardiovascular disease. We want to estimate the total number of people with cardiovascular disease, $\hat t_{p,\text{cardio}} = N \bar y_s$. The variance of this estimator will be $var(\hat t_{p, \text{cardio}}) = N^2\hat p(1-\hat p)$. Going through our sample size calculations, we want to maximize variance, so we take $\hat p = 0.5$. Therefore, ignoring the finite population correction factor for now, we want to solve the following:
+Let $X$ be the binary random variable that models the number of people with cardiovascular disease, with mean $p$ and variance $p(1-p)$. Let $\bar y_S = \hat p$ be the estimate of the average number people with cardiovascular disease. of We want to estimate the total number of people with cardiovascular disease, $\hat t_{p,\text{cardio}} = N \bar y_s$. The variance of this estimator will be $var(\hat t_{p, \text{cardio}}) = N^2\hat p(1-\hat p)$. Going through our sample size calculations, we want to maximize variance, so we take $\hat p = 0.5$. Therefore, ignoring the finite population correction factor for now, we want to solve the following:
 
-```{=tex}
+
 \begin{align*}
 1000 &\geq 1.96\sqrt{0.25 N^2 / n_0}\\
 \implies \Big(\frac{1000}{1.96}\Big)^2 &\geq \frac{N^2}{4n_0}\\
 \implies n_0 &\geq \Big(\frac{N}{2} \cdot \frac{1.96}{1000}\Big)^2\\
 \end{align*}
-```
+
+
 Converting this to code:
 
 ```{r Sample Size Calc}
@@ -67,7 +64,7 @@ print(paste0("Sample Size with FPC: ", n))
 So we use a sample size of 4194.
 
 ```{r Generate SRS}
-# set seed for reproduceable results
+# set seed for reproducable results
 set.seed(124)
 
 # generate random sample
@@ -78,7 +75,7 @@ dim(srs)
 ```
 
 ```{r Calculate vanilla estimates with SRS}
-fpc <- 1 - (n / N)
+fpc <- 1 - n / N
 target_lst <- c("ap_hi", "ap_lo", "cardio")
 
 ap_hi.est <- round(mean(srs$ap_hi), 3)
@@ -93,20 +90,26 @@ ap_lo.moe <- round(1.96*sqrt(ap_lo.var), 3)
 
 cardio.p <- mean(srs$cardio)
 cardio.est <- round(N*cardio.p, 3)
-cardio.var <- fpc*(cardio.p)*(1-cardio.p) / n
-cardio.se <- N * sqrt(cardio.var)
+cardio.var <- fpc*(cardio.p)*(1-cardio.p) * N
+cardio.se <- sqrt(cardio.var)
 cardio.moe <- round(1.96*sqrt(cardio.var), 3)
 
-vanilla.summary <- round(rbind(
-  c(ap_hi.est, ap_hi.se, ap_hi.est - ap_hi.moe, ap_hi.est + ap_hi.moe),
-  c(ap_lo.est, ap_lo.se, ap_lo.est - ap_lo.moe, ap_lo.est + ap_lo.moe),
-  c(cardio.est, cardio.se, cardio.est - cardio.moe, cardio.est + cardio.moe)
-), 3)
-
-vanilla.summary <- cbind(paste("vanilla.", target_lst, sep=""), vanilla.summary)
-colnames(vanilla.summary) <- c("method", "est", "se", "lower", "upper")
-
-vanilla.summary
+vanilla.CI<- data.frame(variable = character(0), est = numeric(0), se = numeric(0), lower = numeric(0), upper = numeric(0))
+input_values <- list(
+  ap_hi = list(est = ap_hi.est, se = ap_hi.se),
+  ap_lo = list(est = ap_lo.est, se = ap_lo.se),
+  cardio = list(est = cardio.est, se = cardio.se)
+)
+for (i in seq_along(input_values)) {
+  input <- input_values[[i]]
+  target_name <- target_lst[i]
+  est <- input$est
+  se <- input$se
+  lower <- est - 1.96 * se
+  upper <- est + 1.96 * se
+  vanilla.CI <- rbind(vanilla.CI, data.frame(target = target_name, est = est, se=se, lower = lower, upper = upper))
+}
+print(vanilla.CI)
 ```
 
 ## Regression and Ratio Estimates
@@ -144,33 +147,34 @@ ratio.cardio.ratio <- mean(srs$cardio) / mean(srs$age_years)
 
 ratio.ap_hi.se <- sqrt(fpc*sum(var(srs$ap_hi-ratio.ap_hi.ratio*srs$weight))/n)
 ratio.ap_lo.se <- sqrt(fpc*sum(var(srs$ap_lo-ratio.ap_lo.ratio*srs$weight))/n)
-ratio.cardio.se <- N*sqrt(fpc*sum(var(srs$cardio-ratio.cardio.ratio*srs$age_years))/n)
+ratio.cardio.se <- N*sqrt(fpc*sum(var(
+  srs$cardio-ratio.cardio.ratio*srs$age_years))/n)
 
 ratio.ap_hi.est <- ratio.ap_hi.ratio * mean(data$weight)
 ratio.ap_lo.est <- ratio.ap_lo.ratio * mean(data$weight)
 ratio.cardio.est <- ratio.cardio.ratio * mean(data$age_years) * N
 
-ratio.summary <- round(rbind(
-  c(ratio.ap_hi.est, ratio.ap_hi.se, 
-    ratio.ap_hi.est - 1.96 * ratio.ap_hi.se,
-    ratio.ap_hi.est + 1.96 * ratio.ap_hi.se),
-  c(ratio.ap_lo.est, ratio.ap_lo.se,
-    ratio.ap_lo.est - 1.96 * ratio.ap_lo.se,
-    ratio.ap_lo.est - 1.96 * ratio.ap_lo.se),
-  c(ratio.cardio.est, ratio.cardio.se, 
-    ratio.cardio.est - 1.96 * ratio.cardio.se,
-    ratio.cardio.est + 1.96 * ratio.cardio.se)
-), 3)
-ratio.summary <- cbind(paste("ratio.", target_lst, sep=""), ratio.summary)
-colnames(ratio.summary) <- c("method", "est", "se", "lower", "upper")
-# rownames(ratio.summary) <- paste("ratio.", target_lst, sep="")
-ratio.summary
+ratio.CI<- data.frame(variable = character(0), est = numeric(0), se = numeric(0), lower = numeric(0), upper = numeric(0))
+input_values <- list(
+  ap_hi = list(est = ratio.ap_hi.est , se = ratio.ap_hi.se ),
+  ap_lo = list(est = ratio.ap_lo.est, se = ratio.ap_lo.se),
+  cardio = list(est = ratio.cardio.est, se = ratio.cardio.se)
+)
+for (i in seq_along(input_values)) {
+  input <- input_values[[i]]
+  target_name <- target_lst[i]
+  est <- input$est
+  se <- input$se
+  lower <- est - 1.96 * se
+  upper <- est + 1.96 * se
+  ratio.CI <- rbind(ratio.CI, data.frame(target = target_name, est = est, se=se, lower = lower, upper = upper))
+}
+print(ratio.CI)
 ```
 
 ```{r Regression Estimates}
 # regression estimate:
-
-# helper function for regression estimate. X, y should be matrices of proper size. Don't ask me why i'm not just using lm() for this; idk either
+# helper function for regression estimate. X, y should be matrices of proper size. 
 regression.est_and_se <- function(X, y, x.pop) {
   X <- as.matrix(X); y <- as.matrix(y)
   X <- cbind(rep(1, dim(X)[1]), X)
@@ -181,8 +185,6 @@ regression.est_and_se <- function(X, y, x.pop) {
   
   ret <- c()
   ret$est <- est; ret$se <- se
-  ret$lower <- est - 1.96*se
-  ret$upper <- est + 1.96*se
   return(ret)
 }
 
@@ -198,42 +200,121 @@ reg.summary <- rbind(
   reg.ap_hi, reg.ap_lo, reg.cardio
 )
 
-reg.summary <- cbind(rownames(reg.summary), reg.summary)
-colnames(reg.summary)[1] <- "method"
-rownames(reg.summary) <- NULL
 reg.summary
+```
+```{r Comparing estimators}
+reg.ap_hi.lower<- 126.353 - 1.96 * 0.2296917
+reg.ap_hi.upper <- 126.353 + 1.96 * 0.2296917
+reg.ap_lo.lower <- 81.39437 - 1.96 * 0.1321236
+reg.ap_lo.upper <- 81.39437 + 1.96 * 0.1321236
+reg.cardio.lower <- 33543.01 - 1.96 * 496.8257
+reg.cardio.upper <- 33543.01 + 1.96 * 496.8257
+reg.CI <- data.frame(
+  variable = c("reg.ap_hi", "reg.ap_lo", "reg.cardio"),
+  est = c(126.353, 81.39437, 33543.01),
+  se = c(0.2296917, 0.1321236, 496.8257),
+  lower = c(reg.ap_hi.lower, reg.ap_lo.lower, reg.cardio.lower),
+  upper = c(reg.ap_hi.upper, reg.ap_lo.upper, reg.cardio.upper)
+)
+print(reg.CI)
 ```
 
 Comparing the performance of each estimator in one table:
 
 ```{r Comparing estimators}
-rbind(vanilla.summary, ratio.summary, reg.summary)
+colnames(ratio.CI) <- colnames(vanilla.CI) <- colnames(reg.CI)
+combined_table <- rbind(vanilla.CI, ratio.CI, reg.CI)
+print(combined_table)
 ```
 
 We observe that the estimated values for each target variable across all estimating methods are roughly the same. When comparing the standard errors of each, we see that ratio estimator has the largest SE out of all three methods. This is expected as from the correlation table and scatter plots above, there is little to no positive correlation between the target and response variable, making the ratio estimator a poor choice. The standard errors for `ap_hi` and `ap_lo` are similar for vanilla and regression estimates, with the vanilla estimate having slightly lower standard errors. Given the low correlation values shown above, the regression line formed will probably be similar to the constant prediction line that the vanilla estimate has, resulting in similar estimates and standard error. However, for the `cardio` response variable, given that the response is binary, linear regression would not be a suitable method to model the data, which is why we see such a higher standard error using the regression method when compared to the vanilla estimate.
 
 ## Stratification
 
-- We assume that we know nothing about our population, aside from population size
-- We also know strata sizes, $N_h / N$
-- 
+To determine which variable to stratify by, we base our decision on the variable that would produce the lowest within-strata variance. Equivalently, from a chosen subset of potential stratifying candidates $s_i \in \{s_1 \cdots s_n\}$, we want to choose to stratify on $s_i$ if: $$ \text{argmax}\big(s^2_{\text{between strata}} / s^2_{\text{total}}\big) = s_i$$ $s^2_{\text{between strata}}$ and $s^2_{\text{total}}$ are between-strata and total variances respectively. Calculating this ratio for the potential stratifying variables `gender`, `cholesterol`, `gluc`, `smoke`, `alco`, and `active`:
 
-We want to stratify our population based on the variable that will create the greatest distinction between stratas. From our intuition, there are a few candidate variables that fulfill this requirement, such as `gender`, `smoke`, and `alco`. Taking sample allocation into account, we would also want to choose a stratifying variable which can help us assume equal variances of our target variables post sampling and stratification, as we don't have a best guess for the strata variances. Out of the 3 candidate stratifiers listed above, our intuition suggests that `gender` would have the least effect on cardiovascular disease presence, while retaining distinct separation between stratas, so we choose `gender` to stratify on. Assuming equal variances between these stratas, we sample using proportional allocation: 
+```{r Stratified sampling EDA}
+# should stratify based on variable that produces smallest within-strata variance
+
+# candidate stratifiying variables: 
+# gender
+# cholesterol
+# gluc
+# smoke
+# alco
+# active
+
+# Calculate within-strata variance of target based off of levels of variables in var_lst
+
+strata.compare_var <- function(df, target_df) {
+  var_lst <- colnames(df)
+  target_lst <- colnames(target_df)
+  ret <- NULL
+  
+  for (t in 1:length(target_df)) {
+    target <- target_df[,t]
+    ratios <- rep(NA, length(var_lst))
+    for (i in 1:length(var_lst)) {
+      v <- df[,i]
+      var.ws <- sum(prop.table(table(v)) * tapply(target, v, var))
+      var.bs <- sum(prop.table(table(v)) * (tapply(target, v, mean) - mean(target))^2)
+      var.tot <- var.ws + var.bs
+      ratios[i] <-  var.ws / var.tot
+    }
+    ret <- rbind(ret, ratios)
+  }
+  rownames(ret) <- target_lst
+  colnames(ret) <- var_lst
+  return(ret)
+}
+
+pred <- data[,c("gender", "cholesterol", "gluc", 
+                "smoke", "alco", "active")]
+target <- data[,c("cardio", "ap_hi", "ap_lo")]
+strata.compare_var(pred, target)
+```
+
+From the table above, we see that variables `smoke`, `alco`, and `active` have the highest between-strata to overall variance ratios, indicating that these variables are the best to stratify on. These three variables all have similar performance, so we arbitrarily choose one (go with `alco` for now).
+
+We now want to see how we much from each strata we should sample. In our case, cost of sampling in our case is constant, as our sampling process is simulated. We want to see if we can use proportional allocation, so we check to see if we can assume the variances of each strata are equal through the stratum-specific population variances:
+
+```{r Check equal variance assumption}
+pop.alco_one.ap_hi.var <- var(data[data$alco==1,"ap_hi"])
+pop.alco_one.ap_lo.var <- var(data[data$alco==1,"ap_lo"])
+pop.alco_one.cardio.var <- var(data[data$alco==1,"cardio"])
+
+pop.alco_zero.ap_hi.var <- var(data[data$alco==0,"ap_hi"])
+pop.alco_zero.ap_lo.var <- var(data[data$alco==0,"ap_lo"])
+pop.alco_zero.cardio.var <- var(data[data$alco==0,"cardio"])
+
+pop.var.summary <- rbind(
+  c(pop.alco_zero.ap_hi.var, pop.alco_one.ap_hi.var),
+  c(pop.alco_zero.ap_lo.var, pop.alco_one.ap_lo.var),
+  c(pop.alco_zero.cardio.var, pop.alco_one.cardio.var)
+)
+
+rownames(pop.var.summary) <- target_lst
+colnames(pop.var.summary) <- c("alco==0", "alco==1")
+pop.var.summary
+```
+
+From above, the variances are roughly equal for each strata for each target variable, so we assume equal variance assumption holds. Therefore, optimal allocation is equal to proportional allocation:
 
 $$
 \frac{n_h}{n} = \frac{N_h}{N}
 $$
 
-
 Calculating the stratified estimate and standard error under proportional allocation:
 
 ```{r General code for finding stratified estimate}
-# generate stratified sample
 set.seed(124)
-n.gender <- round(prop.table(table(data$gender)) * n, 0)
-pop.gender1 <- data[data$gender==1,]; pop.gender2 <- data[data$gender==2,]
-strata.sample <- rbind(pop.gender1[sample(1:nrow(pop.gender1), n.gender[1]),],
-                       pop.gender2[sample(1:nrow(pop.gender2), n.gender[2]), ])
+
+# generate stratified sample
+prop.alco_one <- mean(data$alco)
+n1 <- round((1-prop.alco_one) * n, 0); n2 <- round(prop.alco_one * n, 0)
+pop.alco_zero <- data[data$alco==0,]; pop.alco_one <- data[data$alco==1,]
+strata.sample <- rbind(pop.alco_zero[sample(1:nrow(pop.alco_zero), n1),],
+                       pop.alco_one[sample(1:nrow(pop.alco_one), n2), ])
 
 
 # given population data, sample and calculate the stratified estimate + SE
@@ -244,36 +325,41 @@ stratify.est_and_se <- function(pop, sample, var_str, target_str, total=FALSE) {
   pop.prop <- prop.table(pop.var.count)
   
   sample.means <- tapply(sample[,target_str], sample[,var_str], mean)
-  sample.vars <- tapply(sample[,target_str], sample[,var_str], var) / sample.var.count
+  sample.vars <- tapply(sample[,target_str], sample[,var_str], var) / pop.var.count
   fpc <- 1 - sample.var.count / pop.var.count
   
   est <- round(sum(pop.prop * sample.means), 3)
   se <- round(sqrt(sum(pop.prop^2 * fpc * sample.vars)), 3)
   if (total==TRUE) {est <- N*est; se <- N*se}
   # print(paste0("Strata Estimate for ", target_str, ": ", est, " +/- ", 1.96*se))
-  ret <- c(est = est, se = se, lower = est - 1.96*se, upper = est + 1.96*se)
-  # ret$est <- est
-  # ret$se <- se
+  ret <- c()
+  ret$est <- est
+  ret$se <- se
   return(ret)
 }
 
 strat.ap_hi <- stratify.est_and_se(data, strata.sample, 
-                                   var_str = "gender", target_str = "ap_hi")
+                                   var_str = "alco", target_str = "ap_hi")
 strat.ap_lo <- stratify.est_and_se(data, strata.sample, 
-                                   var_str = "gender", target_str = "ap_lo")
-strat.cardio <- stratify.est_and_se(data, strata.sample, var_str = "gender", 
+                                   var_str = "alco", target_str = "ap_lo")
+strat.cardio <- stratify.est_and_se(data, strata.sample, var_str = "alco", 
                     target_str = "cardio", total=TRUE)
 strat.summary <- rbind(strat.ap_hi, strat.ap_lo, strat.cardio)
-strat.summary <- cbind(rownames(strat.summary), strat.summary)
-colnames(strat.summary)[1] <- "method"
-rownames(strat.summary) <- NULL
 strat.summary
 ```
-
 Comparing all estimates and standard errors from all methods of estimation:
-
 ```{r Full summary table}
 rbind(vanilla.summary, ratio.summary, reg.summary, strat.summary)
 ```
 
-Stratified estimate SE now the lowest. 
+
+Estimates from stratified estimate are similar to the ones from vanilla, ratio, and regression, but standard error for `ap_hi` and `ap_lo` are much lower. The standard error for `cardio` is worse, but why?
+
+```{r TODO}
+# FROM TA: 
+# - stratifying variable based on intuition
+# - equal variance assumption -> proportional allocation, but determine equal variance from population
+
+# FROM WU LANG:
+# - just use intuition
+```
