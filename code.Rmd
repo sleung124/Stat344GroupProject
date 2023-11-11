@@ -157,7 +157,7 @@ ratio.summary <- round(rbind(
     ratio.ap_hi.est + 1.96 * ratio.ap_hi.se),
   c(ratio.ap_lo.est, ratio.ap_lo.se,
     ratio.ap_lo.est - 1.96 * ratio.ap_lo.se,
-    ratio.ap_lo.est - 1.96 * ratio.ap_lo.se),
+    ratio.ap_lo.est + 1.96 * ratio.ap_lo.se),
   c(ratio.cardio.est, ratio.cardio.se, 
     ratio.cardio.est - 1.96 * ratio.cardio.se,
     ratio.cardio.est + 1.96 * ratio.cardio.se)
