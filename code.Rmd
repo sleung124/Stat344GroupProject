@@ -172,7 +172,6 @@ ratio.summary
 # regression estimate:
 
 # helper function for regression estimate. X, y should be matrices of proper size. 
-# Don't ask me why i'm not just using lm() for this; idk either
 regression.est_and_se <- function(X, y, x.pop) {
   X <- as.matrix(X); y <- as.matrix(y)
   X <- cbind(rep(1, dim(X)[1]), X)
@@ -182,9 +181,9 @@ regression.est_and_se <- function(X, y, x.pop) {
   est <- cbind(1, x.pop) %*% w
   
   ret <- c()
-  ret$est <- est; ret$se <- se
-  ret$lower <- est - 1.96*se
-  ret$upper <- est + 1.96*se
+  ret$est <- round(est, 3); ret$se <- round(se, 3)
+  ret$lower <- round(est - 1.96*se, 3)
+  ret$upper <- round(est + 1.96*se, 3)
   return(ret)
 }
 
@@ -195,6 +194,8 @@ reg.cardio <- regression.est_and_se(srs$age_years, srs$cardio, mean(data$age_yea
 # reg.cardio estimates population mean, so we need to multiply estimate and SE by N
 reg.cardio$est <- N*reg.cardio$est
 reg.cardio$se <- N*reg.cardio$se
+reg.cardio$lower <- N*reg.cardio$lower
+reg.cardio$upper <- N*reg.cardio$upper
 
 reg.summary <- rbind(
   reg.ap_hi, reg.ap_lo, reg.cardio
@@ -216,30 +217,26 @@ We observe that the estimated values for each target variable across all estimat
 
 ## Stratification
 
-- We assume that we know nothing about our population, aside from population size
-- We also know strata sizes, $N_h / N$
-- 
-
-We want to stratify our population based on the variable that will create the greatest distinction between stratas. From our intuition, there are a few candidate variables that fulfill this requirement, such as `gender`, `smoke`, and `alco`. Taking sample allocation into account, we would also want to choose a stratifying variable which can help us assume equal variances of our target variables post sampling and stratification, as we don't have a best guess for the strata variances. Out of the 3 candidate stratifiers listed above, our intuition suggests that `gender` would have the least effect on cardiovascular disease presence, while retaining distinct separation between stratas, so we choose `gender` to stratify on. Assuming equal variances between these stratas, we sample using proportional allocation: 
+We want to stratify our population based on the variable that will create the greatest distinction between stratas. From our intuition, there are a few candidate variables that fulfill this requirement, such as `gender`, `smoke`, and `alco`. From an [article](chrome-extension://efaidnbmnnnibpcajpcglclefindmkaj/https://www.cdc.gov/tobacco/data_statistics/sgr/50th-anniversary/pdfs/fs_smoking_CVD_508.pdf) written by the Center for Disease Control and Prevention (CDC), it seems that smoking of any capacity increases the likelihood of cardiovascular disease (CVD), so we suspect that the `smoke` variable would partition the stratas the greatest. Assuming equal variance between the stratas of smokers and non-smokers, we sample using proportional allocation:
 
 $$
 \frac{n_h}{n} = \frac{N_h}{N}
 $$
-
 
 Calculating the stratified estimate and standard error under proportional allocation:
 
 ```{r General code for finding stratified estimate}
 # generate stratified sample
 set.seed(124)
-n.gender <- round(prop.table(table(data$gender)) * n, 0)
-pop.gender1 <- data[data$gender==1,]; pop.gender2 <- data[data$gender==2,]
-strata.sample <- rbind(pop.gender1[sample(1:nrow(pop.gender1), n.gender[1]),],
-                       pop.gender2[sample(1:nrow(pop.gender2), n.gender[2]), ])
+n.smoke <- round(prop.table(table(data$smoke)) * n, 0)
+pop.smoke0 <- data[data$smoke==0,]; pop.smoke1 <- data[data$smoke==1,]
+strata.sample <- rbind(pop.smoke0[sample(1:nrow(pop.smoke0), n.smoke[1]),],
+                       pop.smoke1[sample(1:nrow(pop.smoke1), n.smoke[2]), ])
 
 
 # given population data, sample and calculate the stratified estimate + SE
-stratify.est_and_se <- function(pop, sample, var_str, target_str, total=FALSE) {
+stratify.est_and_se <- function(pop, sample, var_str, 
+                                target_str, total=FALSE) {
   pop.var.count <- table(data[,var_str])
   sample.var.count <- table(sample[,var_str])
   # population proportion for each strata
@@ -253,17 +250,17 @@ stratify.est_and_se <- function(pop, sample, var_str, target_str, total=FALSE) {
   se <- round(sqrt(sum(pop.prop^2 * fpc * sample.vars)), 3)
   if (total==TRUE) {est <- N*est; se <- N*se}
   # print(paste0("Strata Estimate for ", target_str, ": ", est, " +/- ", 1.96*se))
-  ret <- c(est = est, se = se, lower = est - 1.96*se, upper = est + 1.96*se)
-  # ret$est <- est
-  # ret$se <- se
+  ret <- c(est = est, se = se, 
+           lower = round(est - 1.96*se, 3), 
+           upper = round(est + 1.96*se, 3))
   return(ret)
 }
 
 strat.ap_hi <- stratify.est_and_se(data, strata.sample, 
-                                   var_str = "gender", target_str = "ap_hi")
+                                   var_str = "smoke", target_str = "ap_hi")
 strat.ap_lo <- stratify.est_and_se(data, strata.sample, 
-                                   var_str = "gender", target_str = "ap_lo")
-strat.cardio <- stratify.est_and_se(data, strata.sample, var_str = "gender", 
+                                   var_str = "smoke", target_str = "ap_lo")
+strat.cardio <- stratify.est_and_se(data, strata.sample, var_str = "smoke", 
                     target_str = "cardio", total=TRUE)
 strat.summary <- rbind(strat.ap_hi, strat.ap_lo, strat.cardio)
 strat.summary <- cbind(rownames(strat.summary), strat.summary)
@@ -278,4 +275,4 @@ Comparing all estimates and standard errors from all methods of estimation:
 rbind(vanilla.summary, ratio.summary, reg.summary, strat.summary)
 ```
 
-Stratified estimate SE now the lowest. 
+Stratified estimate SE now the lowest.
